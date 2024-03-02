@@ -23,12 +23,15 @@ const multer = Multer({
 });
 
 app.post('/upload', multer.single('file'), async (req, res) => {
+    //Verifica se veio arquivo na requisição
     if (!req.file) {
         return res.status(400).send('Nenhum arquivo anexado');
     }
 
+    //Cria uma referência para o arquivo na Storage usando o nome original dele
     const file = storage.bucket(bucketName).file(req.file.originalname);
 
+    //Cria um stream para escrever o arquivo na Storage e tratar os erros que podem acontecer durante o upload
     const stream = file.createWriteStream({
         metadata: {
             contentType: req.file.mimetype
@@ -40,7 +43,13 @@ app.post('/upload', multer.single('file'), async (req, res) => {
         res.status(500).send('Erro ao fazer upload do arquivo');
     });
 
-    stream.on('finish', () => {
+    stream.on('finish', async () => {
+        const [url] = await file.getSignedUrl({
+            action: 'read',
+            expires: Date.now() + 15 * 60 * 1000 // Duração da url (aqui 15 minutos)
+        });
+
+       //{ Aqui você coloca sua lógica para salvar a url do arquivo em um banco de dados local para usar quando for fazer o download}
         res.status(200).send('Arquivo enviado com sucesso');
     });
 
@@ -48,15 +57,19 @@ app.post('/upload', multer.single('file'), async (req, res) => {
 });
 
 app.get('/download', async (req, res) => {
+    //Você poderia receber um id do seu usuário e buscar no banco de dados a url ou nome do arquivo que salvamos no banco de dados local durante o upload
+    //Para este exemplo, vamos supor que o usuário entraria diretamente com o nome do arquivo
     const fileName = req.query.fileName;
 
     try {
+        //Verifica se o arquivo existe no bucket
         const [exists] = await storage.bucket(bucketName).file(fileName).exists();
 
         if (!exists) {
             return res.status(404).send('Arquivo não encontrado');
         }
 
+        //Cria uma url autenticada com duração de 15 minutos e retorna para o usuário enfim baixar o arquivo
         const [url] = await storage.bucket(bucketName).file(fileName).getSignedUrl({
             action: 'read',
             expires: Date.now() + 15 * 60 * 1000, // 15 minutos
