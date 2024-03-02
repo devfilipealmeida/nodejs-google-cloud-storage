@@ -1,28 +1,62 @@
 const express = require('express');
 const { Storage } = require('@google-cloud/storage');
+const Multer = require('multer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Configure o Google Cloud Storage com suas credenciais
 const storage = new Storage({
-    keyFilename: './application_default_credentials.json' // Substitua pelo caminho do seu arquivo de credenciais
+    //Troque para o seu arquivo de credenciais google
+    keyFilename: './application_default_credentials.json'
 });
-const bucketName = 'files-to-download'; // Substitua pelo nome do seu bucket
 
-// Rota para gerar URL assinada para download do arquivo
+//Troque pelo nome do seu Bucket
+const bucketName = 'files-to-download';
+
+//Configurações do Multer
+//Aqui estabeleci o limite máximo de 5mb
+const multer = Multer({
+    storage: Multer.memoryStorage(),
+    limits: {
+        fileSize: 5 * 1024 * 1024 //Limite de 5MB
+    }
+});
+
+app.post('/upload', multer.single('file'), async (req, res) => {
+    if (!req.file) {
+        return res.status(400).send('Nenhum arquivo anexado');
+    }
+
+    const file = storage.bucket(bucketName).file(req.file.originalname);
+
+    const stream = file.createWriteStream({
+        metadata: {
+            contentType: req.file.mimetype
+        }
+    });
+
+    stream.on('error', (err) => {
+        console.error('Erro ao fazer upload do arquivo:', err);
+        res.status(500).send('Erro ao fazer upload do arquivo');
+    });
+
+    stream.on('finish', () => {
+        res.status(200).send('Arquivo enviado com sucesso');
+    });
+
+    stream.end(req.file.buffer);
+});
+
 app.get('/download', async (req, res) => {
     const fileName = req.query.fileName;
 
     try {
-        // Verifique se o arquivo existe
         const [exists] = await storage.bucket(bucketName).file(fileName).exists();
 
         if (!exists) {
             return res.status(404).send('Arquivo não encontrado');
         }
 
-        // Gere uma URL assinada para o arquivo
         const [url] = await storage.bucket(bucketName).file(fileName).getSignedUrl({
             action: 'read',
             expires: Date.now() + 15 * 60 * 1000, // 15 minutos
@@ -35,7 +69,6 @@ app.get('/download', async (req, res) => {
     }
 });
 
-// Inicie o servidor
 app.listen(PORT, () => {
     console.log(`Servidor rodando na porta ${PORT}`);
 });
